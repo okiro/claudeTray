@@ -15,6 +15,7 @@ let rateLimitInterval = null;
 let rateLimits = null;
 let rateLimitError = null;
 let cachedDashboardData = null;
+let errors = [];
 
 const API_URL = "https://api.anthropic.com/v1/messages";
 const POPUP_WIDTH = 320;
@@ -158,9 +159,29 @@ function refreshCachedData() {
 }
 
 function gatherData() {
-  const data = parseUsageData({ historyDir: app.getPath("userData") });
+  errors = [];
+
+  let data;
+  try {
+    data = parseUsageData({ historyDir: app.getPath("userData") });
+  } catch (err) {
+    errors.push("Usage data: " + err.message);
+    data = { totals: { cost: 0, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, sessions: 0, todayCost: 0, monthCost: 0 }, projects: {} };
+  }
+
   const { totals, projects } = data;
-  const creds = auth.loadCredentials();
+
+  let creds;
+  try {
+    creds = auth.loadCredentials();
+  } catch (err) {
+    errors.push("Credentials: " + err.message);
+    creds = null;
+  }
+
+  if (rateLimitError) {
+    errors.push("Rate limits: " + rateLimitError);
+  }
 
   const allProjects = Object.values(projects);
 
@@ -183,6 +204,7 @@ function gatherData() {
     oauth: creds ? { subscriptionType: creds.subscriptionType, rateLimitTier: creds.rateLimitTier } : null,
     recentProjects,
     topProjects,
+    errors,
   };
 }
 

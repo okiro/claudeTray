@@ -1,16 +1,26 @@
 # Claude Usage Tray
 
-macOS tray app for viewing Claude Code usage and rate-limit status.
-
-The main app lives in `tray-app/`. This repository also includes an optional local dashboard script at the project root for viewing the same usage data in a browser.
+macOS menu bar app for monitoring Claude Code usage and rate-limit status.
 
 ## What It Does
 
-- Shows Claude Code usage in the macOS menu bar
-- Displays 5-hour and 7-day usage limit status
+- Displays today, monthly, and all-time Claude Code spending in the menu bar
+- Shows 5-hour and 7-day usage limit bars with reset countdowns
+- Shows overage utilization when non-zero
+- Lists recent and top projects by cost
 - Reads local Claude usage history from `~/.claude/projects`
 - Imports Claude Code credentials from the macOS keychain
-- Stores app auth data locally using Electron `safeStorage`
+- Auto-refreshes usage every 60s and rate limits every 5 minutes
+- Shows an error indicator when something goes wrong
+
+## Screenshot
+
+Click the tray icon to open the popup:
+
+- Cost cards (today / month / all time)
+- Rate limit bars (5h and 7d utilization)
+- Recent and top projects
+- Error banner (only visible when issues are detected)
 
 ## Repository Layout
 
@@ -18,18 +28,16 @@ The main app lives in `tray-app/`. This repository also includes an optional loc
 .
 ├── README.md
 ├── .gitignore
-├── claude-usage-dashboard.js
-├── lib/
-│   └── claude-usage-parser.js
 └── tray-app/
-    ├── main.js
-    ├── auth.js
-    ├── preload.js
-    ├── popup.html
-    ├── popup.js
+    ├── main.js           # Electron main process, tray icon, IPC
+    ├── auth.js           # Keychain import, token management
+    ├── preload.js        # Context bridge for renderer
+    ├── popup.html        # Popup UI and styles
+    ├── popup.js          # Renderer logic
     ├── lib/
-    ├── fonts/
-    ├── build/
+    │   └── claude-usage-parser.js  # JSONL parsing and cost calculation
+    ├── fonts/            # Instrument Serif, Azeret Mono
+    ├── build/            # macOS build assets (icon, entitlements)
     ├── package.json
     └── package-lock.json
 ```
@@ -38,9 +46,9 @@ The main app lives in `tray-app/`. This repository also includes an optional loc
 
 - macOS
 - Node.js and npm
-- Claude Code installed and logged in
+- Claude Code installed and logged in (credentials must exist in macOS keychain)
 
-## Run The Tray App
+## Run
 
 ```bash
 cd tray-app
@@ -48,39 +56,25 @@ npm install
 npm start
 ```
 
-## Build The App
+## Build
 
 ```bash
 cd tray-app
-npm install
 npm run build
 ```
 
-Build output is generated under `tray-app/dist/` and is intentionally ignored by Git.
+Build output goes to `tray-app/dist/` (git-ignored).
 
-## Optional Local Dashboard
+## How It Works
 
-The repository root also contains a simple browser dashboard:
+1. **Usage data** is parsed from `~/.claude/projects/` JSONL files and merged with a persistent history file to survive session deletions.
+2. **Rate limits** are fetched by making a minimal API request to Anthropic and reading the response headers.
+3. **Authentication** is imported from Claude Code's macOS keychain entry and encrypted locally with Electron's `safeStorage`.
+4. **Errors** from data parsing, auth, or API calls surface in a collapsible error banner above the footer.
 
-```bash
-node claude-usage-dashboard.js
-```
+## Security
 
-Then open `http://localhost:3333`.
-
-This dashboard is optional and is not used by the tray app itself.
-
-## Security Notes
-
-- No API keys are stored in the repository.
-- The tray app imports Claude Code credentials from the macOS keychain.
-- The Electron renderer is isolated through a preload bridge instead of direct Node integration.
-- Local build artifacts and dependencies are ignored via `.gitignore`.
-
-## Publishing Notes
-
-If you are publishing this repository on GitHub:
-
-- keep `tray-app/node_modules/` out of version control
-- keep `tray-app/dist/` out of version control
-- review whether you want to keep the optional root dashboard files
+- No API keys or credentials are stored in the repository
+- Credentials are imported from the macOS keychain at runtime
+- Tokens are encrypted on disk using Electron `safeStorage`
+- The renderer is isolated via a preload context bridge (no `nodeIntegration`)

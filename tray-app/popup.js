@@ -76,8 +76,21 @@ function renderProjects(projects, emptyMessage, dateField) {
   }).join("");
 }
 
+function renderErrors(errs) {
+  const banner = document.getElementById("error-banner");
+  if (!errs || errs.length === 0) {
+    banner.style.display = "none";
+    return;
+  }
+  banner.style.display = "";
+  document.getElementById("error-banner-label").textContent =
+    errs.length === 1 ? "1 issue detected" : errs.length + " issues detected";
+  document.getElementById("error-banner-details").innerHTML =
+    errs.map(function(e) { return '<div class="error-banner-item">' + esc(e) + "</div>"; }).join("");
+}
+
 function renderData(data) {
-  const { totals, rateLimits, rateLimitError, oauth, recentProjects, topProjects, isLoggedIn } = data;
+  const { totals, rateLimits, rateLimitError, oauth, recentProjects, topProjects, isLoggedIn, errors } = data;
 
   const authBtn = document.getElementById("btn-auth");
   authBtn.textContent = isLoggedIn ? "Disconnect" : "Connect to Claude Code";
@@ -146,6 +159,8 @@ function renderData(data) {
     "No projects found",
     "firstSeen"
   );
+
+  renderErrors(errors);
 }
 
 trayApp.onUpdateData(renderData);
@@ -164,6 +179,14 @@ document.getElementById("btn-auth").addEventListener("click", (event) => {
 
 document.getElementById("btn-quit").addEventListener("click", () => {
   trayApp.quit();
+});
+
+document.getElementById("error-banner-toggle").addEventListener("click", () => {
+  const details = document.getElementById("error-banner-details");
+  const chevron = document.getElementById("error-banner-chevron");
+  const open = details.style.display === "none";
+  details.style.display = open ? "" : "none";
+  chevron.className = "error-banner-chevron" + (open ? " open" : "");
 });
 
 trayApp.requestData();

@@ -451,6 +451,65 @@ body {
 
 .rate-message.error { color: var(--terracotta); font-style: normal; }
 
+/* ── Error Banner ── */
+.error-banner {
+  border-top: 1px solid rgba(184,60,42,0.2);
+  background: rgba(184,60,42,0.06);
+  flex-shrink: 0;
+}
+
+.error-banner-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  cursor: pointer;
+  -webkit-user-select: none;
+}
+
+.error-banner-header:hover {
+  background: rgba(184,60,42,0.1);
+}
+
+.error-banner-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 4px rgba(184,60,42,0.5);
+  flex-shrink: 0;
+}
+
+.error-banner-label {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--danger);
+  letter-spacing: 0.3px;
+  flex: 1;
+}
+
+.error-banner-chevron {
+  font-size: 8px;
+  color: var(--dust);
+  transition: transform 0.15s;
+}
+
+.error-banner-chevron.open {
+  transform: rotate(90deg);
+}
+
+.error-banner-details {
+  padding: 0 16px 8px;
+}
+
+.error-banner-item {
+  font-size: 9px;
+  color: var(--dust);
+  padding: 2px 0;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 /* ── Animations ── */
 @keyframes slideIn {
   from { opacity: 0; transform: translateY(-4px); }
@@ -527,6 +586,16 @@ body {
   </div>
 
   </div><!-- end panel-content -->
+
+  <!-- Error banner -->
+  <div class="error-banner" id="error-banner" style="display:none">
+    <div class="error-banner-header" id="error-banner-toggle">
+      <span class="error-banner-dot"></span>
+      <span class="error-banner-label" id="error-banner-label">1 issue</span>
+      <span class="error-banner-chevron" id="error-banner-chevron">▸</span>
+    </div>
+    <div class="error-banner-details" id="error-banner-details" style="display:none"></div>
+  </div>
 
   <!-- Footer -->
   <div class="footer">
