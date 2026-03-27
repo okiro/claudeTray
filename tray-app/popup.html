@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"/>
+<title>Claude Usage</title>
+<style>
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/instrument-serif-regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Azeret Mono';
+  font-style: normal;
+  font-weight: 300 600;
+  font-display: swap;
+  src: url('fonts/azeret-mono-latin.woff2') format('woff2');
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --obsidian: #0c0a09;
+  --basalt: #141210;
+  --slate: #1c1917;
+  --shale: #231f1c;
+  --sandstone: #2c2520;
+  --clay: #3d322a;
+  --terracotta: #c2552a;
+  --terracotta-dim: #8b3d1f;
+  --ember: #e8763a;
+  --sienna: #d4956a;
+  --ochre: #c9a86c;
+  --sand: #b8a48a;
+  --sage: #6b7c5e;
+  --sage-bright: #8fa574;
+  --moss: #4a5c3e;
+  --dust: #7a6e62;
+  --bone: #d6cec4;
+  --chalk: #ede8e0;
+  --smoke: #504842;
+  --warning: #c49a2a;
+  --danger: #b83c2a;
+  --r: 6px;
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --font-mono: 'Azeret Mono', 'SF Mono', monospace;
+}
+
+html, body {
+  background: transparent;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body {
+  font-family: var(--font-mono);
+  color: var(--bone);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.panel {
+  background: var(--basalt);
+  border: 1px solid var(--sandstone);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow:
+    0 25px 60px rgba(0,0,0,0.6),
+    0 8px 20px rgba(0,0,0,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.03);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Noise grain overlay */
+.panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0.35;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+}
+
+/* ── Header ── */
+.header {
+  padding: 14px 16px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--sandstone);
+  background: linear-gradient(180deg, var(--shale) 0%, var(--basalt) 100%);
+  position: relative;
+  -webkit-app-region: drag;
+}
+
+.header-glyph {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, var(--terracotta), var(--ember));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  box-shadow:
+    0 2px 8px rgba(194,85,42,0.3),
+    inset 0 1px 0 rgba(255,255,255,0.15);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.header-glyph::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 7px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.12) 0%, transparent 50%);
+}
+
+.header-text {
+  flex: 1;
+}
+
+.header-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--chalk);
+  letter-spacing: 0.2px;
+  line-height: 1.1;
+}
+
+.header-plan {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--terracotta);
+  margin-top: 2px;
+}
+
+.header-status {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sage-bright);
+  box-shadow: 0 0 6px rgba(143,165,116,0.5);
+  flex-shrink: 0;
+}
+
+.header-status.warning { background: var(--warning); box-shadow: 0 0 6px rgba(196,154,42,0.5); }
+.header-status.danger { background: var(--danger); box-shadow: 0 0 6px rgba(184,60,42,0.5); }
+
+/* ── Cost Cards ── */
+.costs {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1px;
+  background: var(--sandstone);
+  border-bottom: 1px solid var(--sandstone);
+}
+
+.cost-cell {
+  background: var(--basalt);
+  padding: 10px 12px;
+  text-align: center;
+  position: relative;
+}
+
+.cost-cell::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 20%;
+  right: 20%;
+  height: 1px;
+  background: transparent;
+}
+
+.cost-label {
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--dust);
+  margin-bottom: 4px;
+}
+
+.cost-value {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--chalk);
+  letter-spacing: -0.5px;
+}
+
+.cost-cell:first-child .cost-value { color: var(--ember); }
+
+/* ── Section Labels ── */
+.section-label {
+  padding: 8px 16px 4px;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--smoke);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--sandstone), transparent);
+}
+
+/* ── Rate Limit Bars ── */
+.rate-limits {
+  padding: 4px 16px 10px;
+}
+
+.rate-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+}
+
+.rate-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--sand);
+  min-width: 22px;
+  text-align: right;
+}
+
+.rate-bar-track {
+  flex: 1;
+  height: 6px;
+  background: var(--shale);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--sandstone);
+}
+
+.rate-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--terracotta-dim), var(--terracotta));
+  transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.rate-bar-fill.low { background: linear-gradient(90deg, var(--moss), var(--sage)); }
+.rate-bar-fill.mid { background: linear-gradient(90deg, var(--terracotta-dim), var(--terracotta)); }
+.rate-bar-fill.high { background: linear-gradient(90deg, var(--danger), #d44a2a); }
+
+.rate-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.15), transparent);
+  border-radius: 2px 2px 0 0;
+}
+
+.rate-pct {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--dust);
+  min-width: 34px;
+  text-align: right;
+}
+
+.rate-reset {
+  font-size: 9px;
+  color: var(--smoke);
+  min-width: 42px;
+  text-align: right;
+}
+
+/* Rate limit status badge */
+.rate-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px 8px;
+}
+
+.rate-status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--sage-bright);
+  box-shadow: 0 0 4px rgba(143,165,116,0.4);
+}
+
+.rate-status-dot.warning { background: var(--warning); box-shadow: 0 0 4px rgba(196,154,42,0.4); }
+.rate-status-dot.danger { background: var(--danger); box-shadow: 0 0 4px rgba(184,60,42,0.4); }
+
+.rate-status-text {
+  font-size: 9px;
+  color: var(--dust);
+  letter-spacing: 0.3px;
+}
+
+/* ── Overage indicator ── */
+.overage-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px 6px;
+}
+
+.overage-tag {
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--terracotta);
+  background: rgba(194,85,42,0.1);
+  border: 1px solid rgba(194,85,42,0.2);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.overage-val {
+  font-size: 9px;
+  color: var(--dust);
+}
+
+/* ── Projects ── */
+.projects {
+  padding: 2px 16px 6px;
+}
+
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.02);
+}
+
+.project-row:last-child { border-bottom: none; }
+
+.project-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 1px;
+  background: var(--terracotta);
+  flex-shrink: 0;
+  transform: rotate(45deg);
+}
+
+.project-name {
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--bone);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-cost {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--ochre);
+  flex-shrink: 0;
+}
+
+.project-date {
+  font-size: 9px;
+  color: var(--smoke);
+  flex-shrink: 0;
+}
+
+/* ── Scrollable content area ── */
+.panel-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ── Footer ── */
+.footer {
+  display: flex;
+  border-top: 1px solid var(--sandstone);
+  background: var(--slate);
+  flex-shrink: 0;
+}
+
+.footer-btn {
+  flex: 1;
+  padding: 9px 12px;
+  background: none;
+  border: none;
+  color: var(--dust);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-right: 1px solid var(--sandstone);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.footer-btn:last-child { border-right: none; }
+
+.footer-btn:hover {
+  background: var(--shale);
+  color: var(--chalk);
+}
+
+.footer-btn.danger:hover {
+  color: var(--danger);
+}
+
+.footer-btn .icon {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+/* ── Error/Loading states ── */
+.rate-message {
+  padding: 8px 16px 10px;
+  font-size: 10px;
+  color: var(--dust);
+  font-style: italic;
+}
+
+.rate-message.error { color: var(--terracotta); font-style: normal; }
+
+/* ── Animations ── */
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.rate-bar-fill {
+  animation: fillIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+}
+
+@keyframes fillIn {
+  from { width: 0 !important; }
+}
+
+/* Staggered project rows */
+.project-row { animation: slideIn 0.2s ease-out both; }
+.project-row:nth-child(1) { animation-delay: 0.05s; }
+.project-row:nth-child(2) { animation-delay: 0.08s; }
+.project-row:nth-child(3) { animation-delay: 0.11s; }
+.project-row:nth-child(4) { animation-delay: 0.14s; }
+.project-row:nth-child(5) { animation-delay: 0.17s; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--clay); border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="panel" id="panel">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-glyph">⚡</div>
+    <div class="header-text">
+      <div class="header-title">Claude Code</div>
+      <div class="header-plan" id="plan-label">—</div>
+    </div>
+    <div class="header-status" id="header-dot"></div>
+  </div>
+
+  <div class="panel-content">
+  <!-- Cost Cards -->
+  <div class="costs">
+    <div class="cost-cell">
+      <div class="cost-label">Today</div>
+      <div class="cost-value" id="cost-today">—</div>
+    </div>
+    <div class="cost-cell">
+      <div class="cost-label">Month</div>
+      <div class="cost-value" id="cost-month">—</div>
+    </div>
+    <div class="cost-cell">
+      <div class="cost-label">All Time</div>
+      <div class="cost-value" id="cost-total">—</div>
+    </div>
+  </div>
+
+  <!-- Rate Limits -->
+  <div class="section-label">Usage Limits</div>
+  <div id="rate-limits-container">
+    <div class="rate-message">Loading...</div>
+  </div>
+
+  <!-- Recent Projects -->
+  <div class="section-label">Recent Projects</div>
+  <div class="projects" id="recent-projects-container">
+    <div class="rate-message">—</div>
+  </div>
+
+  <!-- Top Projects -->
+  <div class="section-label">Top Projects</div>
+  <div class="projects" id="top-projects-container">
+    <div class="rate-message">—</div>
+  </div>
+
+  </div><!-- end panel-content -->
+
+  <!-- Footer -->
+  <div class="footer">
+    <button class="footer-btn" id="btn-refresh">
+      <span class="icon">↻</span> Refresh
+    </button>
+    <button class="footer-btn" id="btn-auth">
+      Connect
+    </button>
+    <button class="footer-btn danger" id="btn-quit">
+      Quit
+    </button>
+  </div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

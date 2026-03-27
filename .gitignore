@@ -1,0 +1,12 @@
+.DS_Store
+.claude/
+*.log
+*.tgz
+npm-debug.log*
+
+node_modules/
+dist/
+coverage/
+
+tray-app/node_modules/
+tray-app/dist/

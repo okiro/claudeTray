@@ -1,0 +1,47 @@
+{
+  "name": "claude-usage-tray",
+  "version": "1.0.0",
+  "description": "macOS tray app for Claude Code usage stats",
+  "main": "main.js",
+  "files": [
+    "main.js",
+    "auth.js",
+    "preload.js",
+    "popup.html",
+    "popup.js",
+    "lib/**/*",
+    "fonts/**/*",
+    "build/entitlements.mac.plist",
+    "build/icon.png"
+  ],
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.claude.usage-tray",
+    "productName": "Claude Usage Tray",
+    "files": [
+      "main.js",
+      "auth.js",
+      "preload.js",
+      "popup.html",
+      "popup.js",
+      "lib/**/*",
+      "fonts/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "LSUIElement": true
+      }
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}

@@ -1,0 +1,170 @@
+(function() {
+const trayApp = window.trayApp;
+
+function fmtCost(n) {
+  if (typeof n !== "number") return "—";
+  if (n >= 100) return "$" + n.toFixed(0);
+  if (n >= 10) return "$" + n.toFixed(1);
+  return "$" + n.toFixed(2);
+}
+
+function formatResetTime(epochStr) {
+  if (!epochStr) return "";
+  const reset = new Date(Number(epochStr) * 1000);
+  const diffMs = reset - Date.now();
+  if (diffMs <= 0) return "now";
+  const mins = Math.floor(diffMs / 60000);
+  const hrs = Math.floor(mins / 60);
+  if (hrs > 0) return hrs + "h " + (mins % 60) + "m";
+  return mins + "m";
+}
+
+function barClass(pct) {
+  if (pct < 0.5) return "low";
+  if (pct < 0.8) return "mid";
+  return "high";
+}
+
+function statusDotClass(status) {
+  if (status === "allowed_warning") return "warning";
+  if (status === "rejected") return "danger";
+  return "";
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function fmtDate(d) {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (isNaN(dt)) return "";
+  const mon = dt.toLocaleString("en", { month: "short" });
+  return mon + " " + dt.getDate();
+}
+
+function renderRateRow(label, pct, reset) {
+  const w = Math.max(1, Math.round(pct * 100));
+  const cls = barClass(pct);
+  return '<div class="rate-row">' +
+    '<span class="rate-label">' + label + "</span>" +
+    '<div class="rate-bar-track">' +
+      '<div class="rate-bar-fill ' + cls + '" style="width:' + w + '%"></div>' +
+    "</div>" +
+    '<span class="rate-pct">' + (pct * 100).toFixed(1) + "%</span>" +
+    '<span class="rate-reset">' + (reset ? "↻ " + reset : "") + "</span>" +
+  "</div>";
+}
+
+function renderProjects(projects, emptyMessage, dateField) {
+  if (!projects || projects.length === 0) {
+    return '<div class="rate-message">' + emptyMessage + "</div>";
+  }
+
+  return projects.map((project) => {
+    const projectDate = project[dateField] || project.lastSeen || project.firstSeen;
+    return '<div class="project-row">' +
+      '<div class="project-dot"></div>' +
+      '<span class="project-name">' + esc(project.name) + "</span>" +
+      (projectDate ? '<span class="project-date">' + fmtDate(projectDate) + "</span>" : "") +
+      '<span class="project-cost">' + fmtCost(project.cost) + "</span>" +
+    "</div>";
+  }).join("");
+}
+
+function renderData(data) {
+  const { totals, rateLimits, rateLimitError, oauth, recentProjects, topProjects, isLoggedIn } = data;
+
+  const authBtn = document.getElementById("btn-auth");
+  authBtn.textContent = isLoggedIn ? "Disconnect" : "Connect to Claude Code";
+  authBtn.dataset.connected = isLoggedIn ? "true" : "false";
+
+  document.getElementById("cost-today").textContent = fmtCost(totals?.todayCost);
+  document.getElementById("cost-month").textContent = fmtCost(totals?.monthCost);
+  document.getElementById("cost-total").textContent = fmtCost(totals?.cost);
+
+  const plan = oauth?.subscriptionType || "";
+  document.getElementById("plan-label").textContent = plan ? plan.toUpperCase() + " PLAN" : "USAGE MONITOR";
+
+  const headerDot = document.getElementById("header-dot");
+  headerDot.className = "header-status" + (rateLimits ? " " + statusDotClass(rateLimits.status) : "");
+
+  const rlContainer = document.getElementById("rate-limits-container");
+  if (!isLoggedIn) {
+    rlContainer.innerHTML = '<div class="rate-message">Not connected - click <strong>Connect to Claude Code</strong> to get started</div>';
+  } else if (rateLimitError) {
+    rlContainer.innerHTML = '<div class="rate-message error">' + esc(rateLimitError) + "</div>";
+  } else if (rateLimits) {
+    let html = '<div class="rate-limits">';
+
+    html += renderRateRow("5h", rateLimits.fiveHourUtil || 0, formatResetTime(rateLimits.fiveHourReset));
+    html += renderRateRow("7d", rateLimits.sevenDayUtil || 0, formatResetTime(rateLimits.sevenDayReset));
+    html += "</div>";
+
+    if (rateLimits.overageUtil) {
+      const opct = rateLimits.overageUtil;
+      html += '<div class="overage-row">';
+      html += '<span class="overage-tag">Overage</span>';
+      html += '<span class="overage-val">' + (opct * 100).toFixed(1) + "% used</span>";
+      html += "</div>";
+    }
+
+    const status = rateLimits.status;
+    const statusLabel = status === "allowed"
+      ? "Within limits"
+      : status === "allowed_warning"
+        ? "Approaching limit"
+        : status === "rejected"
+          ? "Rate limited"
+          : status;
+
+    html += '<div class="rate-status">';
+    html += '<div class="rate-status-dot ' + statusDotClass(status) + '"></div>';
+    html += '<span class="rate-status-text">' + esc(statusLabel);
+    if (rateLimits.fetchedAt) {
+      const ago = Math.round((Date.now() - new Date(rateLimits.fetchedAt).getTime()) / 1000);
+      html += "  ·  " + (ago < 60 ? ago + "s ago" : Math.round(ago / 60) + "m ago");
+    }
+    html += "</span></div>";
+
+    rlContainer.innerHTML = html;
+  } else {
+    rlContainer.innerHTML = '<div class="rate-message">Loading...</div>';
+  }
+
+  document.getElementById("recent-projects-container").innerHTML = renderProjects(
+    recentProjects,
+    "No projects found",
+    "lastSeen"
+  );
+  document.getElementById("top-projects-container").innerHTML = renderProjects(
+    topProjects,
+    "No projects found",
+    "firstSeen"
+  );
+}
+
+trayApp.onUpdateData(renderData);
+
+document.getElementById("btn-refresh").addEventListener("click", () => {
+  trayApp.refresh();
+});
+
+document.getElementById("btn-auth").addEventListener("click", (event) => {
+  if (event.currentTarget.dataset.connected === "true") {
+    trayApp.logout();
+  } else {
+    trayApp.login();
+  }
+});
+
+document.getElementById("btn-quit").addEventListener("click", () => {
+  trayApp.quit();
+});
+
+trayApp.requestData();
+})();
