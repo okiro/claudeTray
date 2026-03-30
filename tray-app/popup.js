@@ -39,6 +39,13 @@ function esc(s) {
     .replace(/"/g, "&quot;");
 }
 
+function fmtTokens(n) {
+  if (typeof n !== "number" || n === 0) return "";
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "m";
+  if (n >= 1e3) return (n / 1e3).toFixed(0) + "k";
+  return String(n);
+}
+
 function fmtDate(d) {
   if (!d) return "";
   const dt = new Date(d);
@@ -70,6 +77,7 @@ function renderProjects(projects, emptyMessage, dateField) {
     return '<div class="project-row">' +
       '<div class="project-dot"></div>' +
       '<span class="project-name">' + esc(project.name) + "</span>" +
+      (project.totalTokens ? '<span class="project-tokens">' + fmtTokens(project.totalTokens) + "</span>" : "") +
       (projectDate ? '<span class="project-date">' + fmtDate(projectDate) + "</span>" : "") +
       '<span class="project-cost">' + fmtCost(project.cost) + "</span>" +
     "</div>";

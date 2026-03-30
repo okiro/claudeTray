@@ -189,12 +189,12 @@ function gatherData() {
     .filter((p) => p.lastSeen)
     .sort((a, b) => b.lastSeen - a.lastSeen)
     .slice(0, 3)
-    .map((p) => ({ name: p.name, cost: p.cost, lastSeen: p.lastSeen }));
+    .map((p) => ({ name: p.name, cost: p.cost, lastSeen: p.lastSeen, totalTokens: p.inputTokens + p.outputTokens }));
 
   const topProjects = allProjects
     .sort((a, b) => b.cost - a.cost)
     .slice(0, 3)
-    .map((p) => ({ name: p.name, cost: p.cost, firstSeen: p.firstSeen, lastSeen: p.lastSeen }));
+    .map((p) => ({ name: p.name, cost: p.cost, firstSeen: p.firstSeen, lastSeen: p.lastSeen, totalTokens: p.inputTokens + p.outputTokens }));
 
   return {
     totals,
