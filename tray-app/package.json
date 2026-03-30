@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-tray",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "macOS tray app for Claude Code usage stats",
   "main": "main.js",
   "files": [
@@ -16,6 +16,7 @@
   ],
   "scripts": {
     "start": "electron .",
+    "prebuild": "rm -rf dist",
     "build": "electron-builder --mac"
   },
   "build": {
