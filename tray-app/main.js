@@ -205,6 +205,7 @@ function gatherData() {
     recentProjects,
     topProjects,
     errors,
+    appVersion: app.getVersion(),
   };
 }
 

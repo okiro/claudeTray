@@ -98,11 +98,13 @@ function renderErrors(errs) {
 }
 
 function renderData(data) {
-  const { totals, rateLimits, rateLimitError, oauth, recentProjects, topProjects, isLoggedIn, errors } = data;
+  const { totals, rateLimits, rateLimitError, oauth, recentProjects, topProjects, isLoggedIn, errors, appVersion } = data;
 
   const authBtn = document.getElementById("btn-auth");
   authBtn.textContent = isLoggedIn ? "Disconnect" : "Connect to Claude Code";
   authBtn.dataset.connected = isLoggedIn ? "true" : "false";
+
+  document.getElementById("app-version").textContent = appVersion ? "v" + appVersion : "";
 
   document.getElementById("cost-today").textContent = fmtCost(totals?.todayCost);
   document.getElementById("cost-month").textContent = fmtCost(totals?.monthCost);

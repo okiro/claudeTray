@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-tray",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "macOS tray app for Claude Code usage stats",
   "main": "main.js",
   "files": [

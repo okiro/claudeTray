@@ -140,6 +140,13 @@ body {
   line-height: 1.1;
 }
 
+.header-version {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--dust);
+  letter-spacing: 0;
+}
+
 .header-plan {
   font-size: 9px;
   font-weight: 500;
@@ -550,7 +557,7 @@ body {
   <div class="header">
     <div class="header-glyph">⚡</div>
     <div class="header-text">
-      <div class="header-title">Claude Code</div>
+      <div class="header-title">Claude Code <span class="header-version" id="app-version"></span></div>
       <div class="header-plan" id="plan-label">—</div>
     </div>
     <div class="header-status" id="header-dot"></div>
