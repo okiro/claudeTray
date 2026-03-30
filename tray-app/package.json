@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-tray",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "macOS tray app for Claude Code usage stats",
   "main": "main.js",
   "files": [
@@ -30,6 +30,7 @@
       "lib/**/*",
       "fonts/**/*"
     ],
+    "afterAllArtifactBuild": "build/resign.js",
     "mac": {
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
