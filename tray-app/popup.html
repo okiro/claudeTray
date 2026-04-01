@@ -233,6 +233,19 @@ body {
   background: linear-gradient(90deg, var(--sandstone), transparent);
 }
 
+.peak-hours-indicator {
+  font-size: 8px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-transform: none;
+  color: var(--smoke);
+  margin-left: auto;
+  white-space: nowrap;
+}
+.peak-hours-indicator.peak-active {
+  color: var(--ember);
+}
+
 /* ── Rate Limit Bars ── */
 .rate-limits {
   padding: 4px 16px 10px;
@@ -581,7 +594,7 @@ body {
   </div>
 
   <!-- Rate Limits -->
-  <div class="section-label">Usage Limits</div>
+  <div class="section-label">Usage Limits <span id="peak-hours-indicator" class="peak-hours-indicator"></span></div>
   <div id="rate-limits-container">
     <div class="rate-message">Loading...</div>
   </div>

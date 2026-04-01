@@ -19,6 +19,28 @@ function formatResetTime(epochStr) {
   return mins + "m";
 }
 
+function getPeakHoursInfo() {
+  var now = new Date();
+  var pt = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+  var h = pt.getHours();
+  var m = pt.getMinutes();
+  var nowMins = h * 60 + m;
+  var peakStart = 5 * 60;   // 05:00 PT
+  var peakEnd = 11 * 60;    // 11:00 PT
+
+  if (nowMins >= peakStart && nowMins < peakEnd) {
+    var left = peakEnd - nowMins;
+    var lh = Math.floor(left / 60);
+    var lm = left % 60;
+    return { inPeak: true, text: "Peak Hours end in " + (lh > 0 ? lh + "h " : "") + lm + "m" };
+  } else {
+    var till = nowMins < peakStart ? peakStart - nowMins : (24 * 60 - nowMins) + peakStart;
+    var th = Math.floor(till / 60);
+    var tm = till % 60;
+    return { inPeak: false, text: (th > 0 ? th + "h " : "") + tm + "m till Peak Hours" };
+  }
+}
+
 function barClass(pct) {
   if (pct < 0.5) return "low";
   if (pct < 0.8) return "mid";
@@ -115,6 +137,13 @@ function renderData(data) {
 
   const headerDot = document.getElementById("header-dot");
   headerDot.className = "header-status" + (rateLimits ? " " + statusDotClass(rateLimits.status) : "");
+
+  var peakInfo = getPeakHoursInfo();
+  var peakEl = document.getElementById("peak-hours-indicator");
+  if (peakEl) {
+    peakEl.textContent = peakInfo.text;
+    peakEl.className = "peak-hours-indicator" + (peakInfo.inPeak ? " peak-active" : "");
+  }
 
   const rlContainer = document.getElementById("rate-limits-container");
   if (!isLoggedIn) {
