@@ -273,6 +273,7 @@ function createPopup() {
     width: POPUP_WIDTH,
     height: POPUP_HEIGHT,
     frame: false,
+    transparent: true,
     resizable: false,
     movable: false,
     minimizable: false,
