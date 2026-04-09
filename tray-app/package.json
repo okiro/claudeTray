@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-tray",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "macOS tray app for Claude Code usage stats",
   "main": "main.js",
   "files": [
@@ -31,9 +31,9 @@
       "lib/**/*",
       "fonts/**/*"
     ],
-    "afterAllArtifactBuild": "build/resign.js",
     "mac": {
       "category": "public.app-category.developer-tools",
+      "identity": "Orkhan Huseynov (W898QUYB63)",
       "hardenedRuntime": true,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",

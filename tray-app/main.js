@@ -2,7 +2,7 @@ const { app, Tray, Menu, nativeImage, BrowserWindow, ipcMain, screen } = require
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
-const { parseUsageData } = require("./lib/claude-usage-parser");
+const { parseUsageData, getTokensInWindow } = require("./lib/claude-usage-parser");
 const auth = require("./auth");
 
 // Tray-only app — no dock icon
@@ -181,6 +181,29 @@ function gatherData() {
 
   if (rateLimitError) {
     errors.push("Rate limits: " + rateLimitError);
+  }
+
+  // Attach per-window token counts derived from local JSONL files.
+  // The rate-limit API returns only utilization percentages, not absolute token
+  // counts — so we derive them by summing JSONL entries whose timestamp falls
+  // inside each window. Not a server-authoritative number, but a useful
+  // indicator alongside the utilization bar.
+  if (rateLimits) {
+    const nowMs = Date.now();
+    const fiveHourResetMs = Number(rateLimits.fiveHourReset) * 1000;
+    const sevenDayResetMs = Number(rateLimits.sevenDayReset) * 1000;
+    try {
+      rateLimits.fiveHourTokens = Number.isFinite(fiveHourResetMs)
+        ? getTokensInWindow(fiveHourResetMs - 5 * 3600 * 1000, nowMs)
+        : null;
+      rateLimits.sevenDayTokens = Number.isFinite(sevenDayResetMs)
+        ? getTokensInWindow(sevenDayResetMs - 7 * 24 * 3600 * 1000, nowMs)
+        : null;
+    } catch (err) {
+      errors.push("Window tokens: " + err.message);
+      rateLimits.fiveHourTokens = null;
+      rateLimits.sevenDayTokens = null;
+    }
   }
 
   const allProjects = Object.values(projects);

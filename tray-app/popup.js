@@ -76,15 +76,17 @@ function fmtDate(d) {
   return mon + " " + dt.getDate();
 }
 
-function renderRateRow(label, pct, reset) {
+function renderRateRow(label, pct, reset, tokens) {
   const w = Math.max(1, Math.round(pct * 100));
   const cls = barClass(pct);
+  const tokensLabel = fmtTokens(tokens);
   return '<div class="rate-row">' +
     '<span class="rate-label">' + label + "</span>" +
     '<div class="rate-bar-track">' +
       '<div class="rate-bar-fill ' + cls + '" style="width:' + w + '%"></div>' +
     "</div>" +
     '<span class="rate-pct">' + (pct * 100).toFixed(1) + "%</span>" +
+    (tokensLabel ? '<span class="rate-tokens" title="Tokens used in this window (local count)">· ' + tokensLabel + "</span>" : "") +
     '<span class="rate-reset">' + (reset ? "↻ " + reset : "") + "</span>" +
   "</div>";
 }
@@ -153,8 +155,8 @@ function renderData(data) {
   } else if (rateLimits) {
     let html = '<div class="rate-limits">';
 
-    html += renderRateRow("5h", rateLimits.fiveHourUtil || 0, formatResetTime(rateLimits.fiveHourReset));
-    html += renderRateRow("7d", rateLimits.sevenDayUtil || 0, formatResetTime(rateLimits.sevenDayReset));
+    html += renderRateRow("5h", rateLimits.fiveHourUtil || 0, formatResetTime(rateLimits.fiveHourReset), rateLimits.fiveHourTokens && rateLimits.fiveHourTokens.total);
+    html += renderRateRow("7d", rateLimits.sevenDayUtil || 0, formatResetTime(rateLimits.sevenDayReset), rateLimits.sevenDayTokens && rateLimits.sevenDayTokens.total);
     html += "</div>";
 
     if (rateLimits.overageUtil) {

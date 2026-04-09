@@ -305,6 +305,73 @@ function parseUsageData(options = {}) {
   return { projects, dailyUsage, globalModelBreakdown, sessions, totals };
 }
 
+// ─── Window-scoped token counting ────────────────────────────────────────────
+
+/**
+ * Sum tokens from JSONL entries whose timestamp falls within [windowStartMs, windowEndMs].
+ * Used to show "tokens used in the current rate limit window" alongside the rate-limit bars.
+ * Note: this is a local, best-effort count and will not match Anthropic's server-side
+ * unified utilization exactly (different weighting / per-model accounting).
+ */
+function getTokensInWindow(windowStartMs, windowEndMs) {
+  const empty = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+  if (!Number.isFinite(windowStartMs) || !Number.isFinite(windowEndMs)) return empty;
+  if (!fs.existsSync(CLAUDE_DIR)) return empty;
+
+  const result = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+
+  let projectDirs = [];
+  try {
+    projectDirs = fs.readdirSync(CLAUDE_DIR).filter((d) => {
+      try { return fs.statSync(path.join(CLAUDE_DIR, d)).isDirectory(); }
+      catch { return false; }
+    });
+  } catch { return empty; }
+
+  for (const dir of projectDirs) {
+    const projectDir = path.join(CLAUDE_DIR, dir);
+    let jsonlFiles = [];
+    try {
+      jsonlFiles = fs.readdirSync(projectDir).filter((f) => f.endsWith(".jsonl"));
+    } catch { continue; }
+
+    for (const file of jsonlFiles) {
+      const filePath = path.join(projectDir, file);
+
+      // Fast path: skip files last modified before the window started.
+      try {
+        const stat = fs.statSync(filePath);
+        if (stat.mtimeMs < windowStartMs) continue;
+      } catch { continue; }
+
+      let lines = [];
+      try {
+        lines = fs.readFileSync(filePath, "utf8").split("\n").filter(Boolean);
+      } catch { continue; }
+
+      for (const line of lines) {
+        let entry;
+        try { entry = JSON.parse(line); } catch { continue; }
+        if (!entry || entry.type !== "assistant") continue;
+        if (!entry.timestamp) continue;
+
+        const ts = Date.parse(entry.timestamp);
+        if (!Number.isFinite(ts)) continue;
+        if (ts < windowStartMs || ts > windowEndMs) continue;
+
+        const usage = (entry.message && entry.message.usage) || entry.usage || {};
+        result.input += usage.input_tokens || 0;
+        result.output += usage.output_tokens || 0;
+        result.cacheRead += usage.cache_read_input_tokens || 0;
+        result.cacheWrite += usage.cache_creation_input_tokens || 0;
+      }
+    }
+  }
+
+  result.total = result.input + result.output;
+  return result;
+}
+
 function fmt(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
   if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
@@ -322,6 +389,7 @@ module.exports = {
   decodeProjectName,
   getShortName,
   parseUsageData,
+  getTokensInWindow,
   fmt,
   fmtCost,
 };
