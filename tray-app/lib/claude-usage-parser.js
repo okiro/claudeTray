@@ -3,7 +3,7 @@
  * Used by both the web dashboard and the tray app
  */
 
-const fs = require("fs");
+const fsp = require("fs").promises;
 const path = require("path");
 const os = require("os");
 
@@ -53,23 +53,22 @@ function emptyHistory() {
   return { version: 1, lastUpdated: null, dailyUsage: {}, projects: {}, globalModelBreakdown: {} };
 }
 
-function loadHistory(historyPath) {
+async function loadHistory(historyPath) {
   try {
-    if (fs.existsSync(historyPath)) {
-      return JSON.parse(fs.readFileSync(historyPath, "utf8"));
-    }
-  } catch { /* corrupted file — start fresh */ }
+    const raw = await fsp.readFile(historyPath, "utf8");
+    return JSON.parse(raw);
+  } catch { /* missing or corrupted — start fresh */ }
   return emptyHistory();
 }
 
-function saveHistory(historyPath, history) {
+async function saveHistory(historyPath, history) {
   history.lastUpdated = new Date().toISOString();
   const tmp = historyPath + ".tmp";
   try {
-    fs.writeFileSync(tmp, JSON.stringify(history, null, 2));
-    fs.renameSync(tmp, historyPath);
+    await fsp.writeFile(tmp, JSON.stringify(history, null, 2));
+    await fsp.rename(tmp, historyPath);
   } catch {
-    try { fs.unlinkSync(tmp); } catch {}
+    try { await fsp.unlink(tmp); } catch { /* ignore */ }
   }
 }
 
@@ -90,7 +89,7 @@ function getShortName(fullPath) {
   return parts[parts.length - 1] || fullPath;
 }
 
-function parseUsageData(options = {}) {
+async function parseUsageData(options = {}) {
   const historyDir = options.historyDir || DEFAULT_HISTORY_DIR;
   const historyPath = path.join(historyDir, HISTORY_FILENAME);
   const projects = {};
@@ -102,26 +101,24 @@ function parseUsageData(options = {}) {
   const todayStr = now.toISOString().slice(0, 10);
   const monthStr = now.toISOString().slice(0, 7);
 
-  if (!fs.existsSync(CLAUDE_DIR)) {
+  let topEntries;
+  try {
+    topEntries = await fsp.readdir(CLAUDE_DIR, { withFileTypes: true });
+  } catch {
     return { projects, dailyUsage, globalModelBreakdown, sessions: [], totals: { cost: 0, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, sessions: 0, todayCost: 0, monthCost: 0 } };
   }
 
-  const projectDirs = fs.readdirSync(CLAUDE_DIR).filter((d) => {
-    try {
-      return fs.statSync(path.join(CLAUDE_DIR, d)).isDirectory();
-    } catch {
-      return false;
-    }
-  });
+  const projectDirs = topEntries.filter((e) => e.isDirectory()).map((e) => e.name);
 
   for (const dir of projectDirs) {
     const projectPath = decodeProjectName(dir);
     const shortName = getShortName(projectPath);
     const projectDir = path.join(CLAUDE_DIR, dir);
 
-    let jsonlFiles = [];
+    let jsonlFiles;
     try {
-      jsonlFiles = fs.readdirSync(projectDir).filter((f) => f.endsWith(".jsonl"));
+      const entries = await fsp.readdir(projectDir);
+      jsonlFiles = entries.filter((f) => f.endsWith(".jsonl"));
     } catch { continue; }
 
     const proj = {
@@ -141,9 +138,10 @@ function parseUsageData(options = {}) {
 
     for (const file of jsonlFiles) {
       const filePath = path.join(projectDir, file);
-      let lines = [];
+      let lines;
       try {
-        lines = fs.readFileSync(filePath, "utf8").split("\n").filter(Boolean);
+        const raw = await fsp.readFile(filePath, "utf8");
+        lines = raw.split("\n").filter(Boolean);
       } catch { continue; }
 
       for (const line of lines) {
@@ -196,7 +194,7 @@ function parseUsageData(options = {}) {
   }
 
   // ─── Merge with persisted history ──────────────────────────────────────────
-  const history = loadHistory(historyPath);
+  const history = await loadHistory(historyPath);
 
   // Merge dailyUsage
   mergeMax(dailyUsage, history.dailyUsage);
@@ -278,7 +276,7 @@ function parseUsageData(options = {}) {
       lastSeen: p.lastSeen ? (p.lastSeen instanceof Date ? p.lastSeen.toISOString() : p.lastSeen) : null,
     };
   }
-  saveHistory(historyPath, updatedHistory);
+  await saveHistory(historyPath, updatedHistory);
 
   const totals = Object.values(projects).reduce(
     (acc, p) => ({
@@ -313,26 +311,25 @@ function parseUsageData(options = {}) {
  * Note: this is a local, best-effort count and will not match Anthropic's server-side
  * unified utilization exactly (different weighting / per-model accounting).
  */
-function getTokensInWindow(windowStartMs, windowEndMs) {
+async function getTokensInWindow(windowStartMs, windowEndMs) {
   const empty = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
   if (!Number.isFinite(windowStartMs) || !Number.isFinite(windowEndMs)) return empty;
-  if (!fs.existsSync(CLAUDE_DIR)) return empty;
 
   const result = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
 
-  let projectDirs = [];
+  let topEntries;
   try {
-    projectDirs = fs.readdirSync(CLAUDE_DIR).filter((d) => {
-      try { return fs.statSync(path.join(CLAUDE_DIR, d)).isDirectory(); }
-      catch { return false; }
-    });
+    topEntries = await fsp.readdir(CLAUDE_DIR, { withFileTypes: true });
   } catch { return empty; }
+
+  const projectDirs = topEntries.filter((e) => e.isDirectory()).map((e) => e.name);
 
   for (const dir of projectDirs) {
     const projectDir = path.join(CLAUDE_DIR, dir);
-    let jsonlFiles = [];
+    let jsonlFiles;
     try {
-      jsonlFiles = fs.readdirSync(projectDir).filter((f) => f.endsWith(".jsonl"));
+      const entries = await fsp.readdir(projectDir);
+      jsonlFiles = entries.filter((f) => f.endsWith(".jsonl"));
     } catch { continue; }
 
     for (const file of jsonlFiles) {
@@ -340,13 +337,14 @@ function getTokensInWindow(windowStartMs, windowEndMs) {
 
       // Fast path: skip files last modified before the window started.
       try {
-        const stat = fs.statSync(filePath);
+        const stat = await fsp.stat(filePath);
         if (stat.mtimeMs < windowStartMs) continue;
       } catch { continue; }
 
-      let lines = [];
+      let lines;
       try {
-        lines = fs.readFileSync(filePath, "utf8").split("\n").filter(Boolean);
+        const raw = await fsp.readFile(filePath, "utf8");
+        lines = raw.split("\n").filter(Boolean);
       } catch { continue; }
 
       for (const line of lines) {

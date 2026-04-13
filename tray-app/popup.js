@@ -204,7 +204,10 @@ function renderData(data) {
   renderErrors(errors);
 }
 
-trayApp.onUpdateData(renderData);
+const unsubscribeUpdateData = trayApp.onUpdateData(renderData);
+window.addEventListener("beforeunload", () => {
+  unsubscribeUpdateData();
+});
 
 document.getElementById("btn-refresh").addEventListener("click", () => {
   trayApp.refresh();

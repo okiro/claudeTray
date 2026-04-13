@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-tray",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "macOS tray app for Claude Code usage stats",
   "main": "main.js",
   "files": [
@@ -17,7 +17,8 @@
   "scripts": {
     "start": "electron .",
     "prebuild": "rm -rf dist",
-    "build": "electron-builder --mac"
+    "build": "electron-builder --mac",
+    "lint": "eslint ."
   },
   "build": {
     "appId": "com.claude.usage-tray",
@@ -43,7 +44,10 @@
     }
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "electron": "^41.1.0",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "eslint": "^10.2.0",
+    "globals": "^17.5.0"
   }
 }

@@ -16,6 +16,7 @@ let rateLimits = null;
 let rateLimitError = null;
 let cachedDashboardData = null;
 let errors = [];
+let rateLimitFetchInFlight = null;
 
 const API_URL = "https://api.anthropic.com/v1/messages";
 const POPUP_WIDTH = 320;
@@ -40,18 +41,25 @@ function loadCache() {
   }
 }
 
+let saveCachePending = null;
 function saveCache() {
-  try {
-    const cachePath = getCachePath();
-    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-    fs.writeFileSync(cachePath, JSON.stringify({
-      rateLimits,
-      rateLimitError,
-      dashboardData: cachedDashboardData,
-    }));
-  } catch {
-    // Non-critical — ignore write errors
-  }
+  if (saveCachePending) return saveCachePending;
+  saveCachePending = (async () => {
+    try {
+      const cachePath = getCachePath();
+      await fs.promises.mkdir(path.dirname(cachePath), { recursive: true });
+      await fs.promises.writeFile(cachePath, JSON.stringify({
+        rateLimits,
+        rateLimitError,
+        dashboardData: cachedDashboardData,
+      }));
+    } catch {
+      // Non-critical — ignore write errors
+    } finally {
+      saveCachePending = null;
+    }
+  })();
+  return saveCachePending;
 }
 
 // ─── HTTP helper ─────────────────────────────────────────────────────────────
@@ -91,7 +99,17 @@ function httpsPost(url, body, headers = {}) {
 
 // ─── Rate limit fetching ─────────────────────────────────────────────────────
 
-async function fetchRateLimits({ allowReimport = true } = {}) {
+async function fetchRateLimits(opts = {}) {
+  // Coalesce concurrent callers onto the same request so rapid Refresh clicks
+  // don't race multiple writes to rateLimits/rateLimitError.
+  if (rateLimitFetchInFlight) return rateLimitFetchInFlight;
+  rateLimitFetchInFlight = doFetchRateLimits(opts).finally(() => {
+    rateLimitFetchInFlight = null;
+  });
+  return rateLimitFetchInFlight;
+}
+
+async function doFetchRateLimits({ allowReimport = true } = {}) {
   // getValidAccessToken will re-import from keychain if token is expired
   const accessToken = auth.getValidAccessToken();
   if (!accessToken) {
@@ -123,13 +141,14 @@ async function fetchRateLimits({ allowReimport = true } = {}) {
       auth.clearCredentials();
       if (allowReimport && auth.importFromKeychain()) {
         console.log("[main] Re-imported from keychain after 401, retrying once");
-        return fetchRateLimits({ allowReimport: false });
+        return doFetchRateLimits({ allowReimport: false });
       }
       rateLimitError = "Auth expired — reconnect to Claude Code";
       rateLimits = null;
       return;
     }
 
+    const creds = auth.loadCredentials() || {};
     rateLimitError = null;
     rateLimits = {
       status: h["anthropic-ratelimit-unified-status"] || "unknown",
@@ -142,8 +161,8 @@ async function fetchRateLimits({ allowReimport = true } = {}) {
       overageStatus: h["anthropic-ratelimit-unified-overage-status"],
       overageUtil: parseFloat(h["anthropic-ratelimit-unified-overage-utilization"] || "0"),
       fallbackPct: h["anthropic-ratelimit-unified-fallback-percentage"],
-      subscriptionType: (auth.loadCredentials() || {}).subscriptionType || "unknown",
-      rateLimitTier: (auth.loadCredentials() || {}).rateLimitTier || "",
+      subscriptionType: creds.subscriptionType || "unknown",
+      rateLimitTier: creds.rateLimitTier || "",
       fetchedAt: new Date().toISOString(),
     };
   } catch (err) {
@@ -154,16 +173,16 @@ async function fetchRateLimits({ allowReimport = true } = {}) {
 
 // ─── Data assembly ───────────────────────────────────────────────────────────
 
-function refreshCachedData() {
-  cachedDashboardData = gatherData();
+async function refreshCachedData() {
+  cachedDashboardData = await gatherData();
 }
 
-function gatherData() {
+async function gatherData() {
   errors = [];
 
   let data;
   try {
-    data = parseUsageData({ historyDir: app.getPath("userData") });
+    data = await parseUsageData({ historyDir: app.getPath("userData") });
   } catch (err) {
     errors.push("Usage data: " + err.message);
     data = { totals: { cost: 0, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, sessions: 0, todayCost: 0, monthCost: 0 }, projects: {} };
@@ -194,10 +213,10 @@ function gatherData() {
     const sevenDayResetMs = Number(rateLimits.sevenDayReset) * 1000;
     try {
       rateLimits.fiveHourTokens = Number.isFinite(fiveHourResetMs)
-        ? getTokensInWindow(fiveHourResetMs - 5 * 3600 * 1000, nowMs)
+        ? await getTokensInWindow(fiveHourResetMs - 5 * 3600 * 1000, nowMs)
         : null;
       rateLimits.sevenDayTokens = Number.isFinite(sevenDayResetMs)
-        ? getTokensInWindow(sevenDayResetMs - 7 * 24 * 3600 * 1000, nowMs)
+        ? await getTokensInWindow(sevenDayResetMs - 7 * 24 * 3600 * 1000, nowMs)
         : null;
     } catch (err) {
       errors.push("Window tokens: " + err.message);
@@ -357,8 +376,7 @@ function positionPopup() {
 }
 
 function sendDataToPopup() {
-  if (popup && !popup.isDestroyed()) {
-    if (!cachedDashboardData) refreshCachedData();
+  if (popup && !popup.isDestroyed() && cachedDashboardData) {
     popup.webContents.send("update-data", cachedDashboardData);
   }
 }
@@ -369,7 +387,7 @@ ipcMain.on("request-data", () => sendDataToPopup());
 
 ipcMain.on("refresh", async () => {
   await fetchRateLimits();
-  refreshCachedData();
+  await refreshCachedData();
   updateTrayTitle();
   sendDataToPopup();
 });
@@ -378,24 +396,24 @@ ipcMain.on("login", async () => {
   try {
     await auth.login();
     await fetchRateLimits();
-    refreshCachedData();
+    await refreshCachedData();
     updateTrayTitle();
     sendDataToPopup();
     saveCache();
   } catch (err) {
     // Auth failed — refresh UI state with error
     rateLimitError = err.message;
-    refreshCachedData();
+    await refreshCachedData();
     sendDataToPopup();
   }
 });
 
-ipcMain.on("logout", () => {
+ipcMain.on("logout", async () => {
   auth.clearCredentials();
   rateLimits = null;
   rateLimitError = "Not connected";
   cachedDashboardData = null;
-  refreshCachedData();
+  await refreshCachedData();
   updateTrayTitle();
   sendDataToPopup();
   saveCache();
@@ -443,29 +461,29 @@ app.whenReady().then(async () => {
   updateTrayTitle();
 
   // Then fetch fresh data in background
-  fetchRateLimits().then(() => {
-    refreshCachedData();
+  fetchRateLimits().then(async () => {
+    await refreshCachedData();
     updateTrayTitle();
     sendDataToPopup();
     saveCache();
   });
 
   // Auto-refresh usage every 60s
-  refreshInterval = setInterval(() => {
-    refreshCachedData();
+  refreshInterval = setInterval(async () => {
+    await refreshCachedData();
     updateTrayTitle();
     sendDataToPopup();
     saveCache();
   }, 60_000);
 
-  // Auto-refresh rate limits every 5 minutes
+  // Auto-refresh rate limits every 15 minutes
   rateLimitInterval = setInterval(async () => {
     await fetchRateLimits();
-    refreshCachedData();
+    await refreshCachedData();
     updateTrayTitle();
     sendDataToPopup();
     saveCache();
-  }, 5 * 60_000);
+  }, 15 * 60_000);
 });
 
 app.on("window-all-closed", (e) => {
