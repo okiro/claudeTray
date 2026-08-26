@@ -2,7 +2,7 @@
 const trayApp = window.trayApp;
 
 function fmtCost(n) {
-  if (typeof n !== "number") return "—";
+  if (typeof n !== "number" || !isFinite(n)) return "—";
   if (n >= 100) return "$" + n.toFixed(0);
   if (n >= 10) return "$" + n.toFixed(1);
   return "$" + n.toFixed(2);
@@ -10,7 +10,10 @@ function fmtCost(n) {
 
 function formatResetTime(epochStr) {
   if (!epochStr) return "";
-  const reset = new Date(Number(epochStr) * 1000);
+  const epoch = Number(epochStr);
+  // A missing/garbage reset header used to render as "NaNm".
+  if (!isFinite(epoch)) return "";
+  const reset = new Date(epoch * 1000);
   const diffMs = reset - Date.now();
   if (diffMs <= 0) return "now";
   const mins = Math.floor(diffMs / 60000);
@@ -62,7 +65,7 @@ function esc(s) {
 }
 
 function fmtTokens(n) {
-  if (typeof n !== "number" || n === 0) return "";
+  if (typeof n !== "number" || !isFinite(n) || n === 0) return "";
   if (n >= 1e6) return (n / 1e6).toFixed(1) + "m";
   if (n >= 1e3) return (n / 1e3).toFixed(0) + "k";
   return String(n);
@@ -77,15 +80,18 @@ function fmtDate(d) {
 }
 
 function renderRateRow(label, pct, reset, tokens) {
-  const w = Math.max(1, Math.round(pct * 100));
-  const cls = barClass(pct);
+  // Utilisation can exceed 1.0 (overage) and can be NaN if a header is garbage —
+  // either would produce an invalid width that overflows or breaks the track.
+  const safePct = isFinite(pct) ? Math.min(1, Math.max(0, pct)) : 0;
+  const w = Math.max(1, Math.round(safePct * 100));
+  const cls = barClass(safePct);
   const tokensLabel = fmtTokens(tokens);
   return '<div class="rate-row">' +
     '<span class="rate-label">' + label + "</span>" +
     '<div class="rate-bar-track">' +
       '<div class="rate-bar-fill ' + cls + '" style="width:' + w + '%"></div>' +
     "</div>" +
-    '<span class="rate-pct">' + (pct * 100).toFixed(1) + "%</span>" +
+    '<span class="rate-pct">' + (isFinite(pct) ? (pct * 100).toFixed(1) + "%" : "—") + "</span>" +
     (tokensLabel ? '<span class="rate-tokens" title="Tokens used in this window (local count)">· ' + tokensLabel + "</span>" : "") +
     '<span class="rate-reset">' + (reset ? "↻ " + reset : "") + "</span>" +
   "</div>";

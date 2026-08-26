@@ -15,8 +15,8 @@ let rateLimitInterval = null;
 let rateLimits = null;
 let rateLimitError = null;
 let cachedDashboardData = null;
-let errors = [];
 let rateLimitFetchInFlight = null;
+let isQuitting = false;
 
 const API_URL = "https://api.anthropic.com/v1/messages";
 const POPUP_WIDTH = 320;
@@ -42,8 +42,15 @@ function loadCache() {
 }
 
 let saveCachePending = null;
+let saveCacheQueued = false;
 function saveCache() {
-  if (saveCachePending) return saveCachePending;
+  // A save requested while one is in flight used to be a silent no-op, so the
+  // final state before quit (e.g. after Disconnect) never reached disk. Queue a
+  // single trailing write instead.
+  if (saveCachePending) {
+    saveCacheQueued = true;
+    return saveCachePending;
+  }
   saveCachePending = (async () => {
     try {
       const cachePath = getCachePath();
@@ -57,6 +64,10 @@ function saveCache() {
       // Non-critical — ignore write errors
     } finally {
       saveCachePending = null;
+    }
+    if (saveCacheQueued) {
+      saveCacheQueued = false;
+      await saveCache();
     }
   })();
   return saveCachePending;
@@ -111,7 +122,7 @@ async function fetchRateLimits(opts = {}) {
 
 async function doFetchRateLimits({ allowReimport = true } = {}) {
   // getValidAccessToken will re-import from keychain if token is expired
-  const accessToken = auth.getValidAccessToken();
+  const accessToken = await auth.getValidAccessToken();
   if (!accessToken) {
     rateLimits = null;
     rateLimitError = "Not connected — click Connect to Claude Code";
@@ -138,8 +149,8 @@ async function doFetchRateLimits({ allowReimport = true } = {}) {
     if (res.status === 401) {
       // Token rejected by API — try re-importing fresh from keychain
       console.log("[main] API returned 401, attempting keychain re-import...");
-      auth.clearCredentials();
-      if (allowReimport && auth.importFromKeychain()) {
+      await auth.clearCredentials();
+      if (allowReimport && await auth.importFromKeychain()) {
         console.log("[main] Re-imported from keychain after 401, retrying once");
         return doFetchRateLimits({ allowReimport: false });
       }
@@ -148,7 +159,25 @@ async function doFetchRateLimits({ allowReimport = true } = {}) {
       return;
     }
 
-    const creds = auth.loadCredentials() || {};
+    // Any non-2xx other than 429 carries no anthropic-ratelimit-unified-*
+    // headers. Falling through here would publish a fabricated "0% used" reading
+    // and clear the error banner during an outage.
+    if (res.status !== 429 && (res.status < 200 || res.status >= 300)) {
+      rateLimitError = `API error ${res.status}`;
+      rateLimits = null;
+      return;
+    }
+
+    // A 429 does carry the headers, but a response missing them entirely is not
+    // something we can render as utilisation.
+    if (h["anthropic-ratelimit-unified-5h-utilization"] === undefined &&
+        h["anthropic-ratelimit-unified-status"] === undefined) {
+      rateLimitError = "Rate limit headers missing from API response";
+      rateLimits = null;
+      return;
+    }
+
+    const creds = (await auth.loadCredentials()) || {};
     rateLimitError = null;
     rateLimits = {
       status: h["anthropic-ratelimit-unified-status"] || "unknown",
@@ -173,12 +202,26 @@ async function doFetchRateLimits({ allowReimport = true } = {}) {
 
 // ─── Data assembly ───────────────────────────────────────────────────────────
 
+// Coalesce concurrent refreshes: the 60s interval, the 15m interval and the
+// refresh/login/logout IPC handlers can all fire at once, and overlapping
+// parseUsageData runs raced each other's history writes.
+let refreshInFlight = null;
 async function refreshCachedData() {
-  cachedDashboardData = await gatherData();
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      cachedDashboardData = await gatherData();
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
 }
 
 async function gatherData() {
-  errors = [];
+  // Local, not module-global: two overlapping gatherData runs used to append to
+  // the same array and cross-contaminate each other's error lists.
+  const errors = [];
 
   let data;
   try {
@@ -192,13 +235,15 @@ async function gatherData() {
 
   let creds;
   try {
-    creds = auth.loadCredentials();
+    creds = await auth.loadCredentials();
   } catch (err) {
     errors.push("Credentials: " + err.message);
     creds = null;
   }
 
-  if (rateLimitError) {
+  // Only surface this as an error when the user is actually connected — being
+  // logged out is a deliberate state, not a fault to flag in the error banner.
+  if (rateLimitError && creds) {
     errors.push("Rate limits: " + rateLimitError);
   }
 
@@ -207,21 +252,25 @@ async function gatherData() {
   // counts — so we derive them by summing JSONL entries whose timestamp falls
   // inside each window. Not a server-authoritative number, but a useful
   // indicator alongside the utilization bar.
-  if (rateLimits) {
+  // Snapshot the global once: doFetchRateLimits may replace `rateLimits` with a
+  // fresh object while the awaits below are running, and writing the token
+  // counts onto the old object would silently drop them from the payload.
+  const rl = rateLimits ? { ...rateLimits } : null;
+  if (rl) {
     const nowMs = Date.now();
-    const fiveHourResetMs = Number(rateLimits.fiveHourReset) * 1000;
-    const sevenDayResetMs = Number(rateLimits.sevenDayReset) * 1000;
+    const fiveHourResetMs = Number(rl.fiveHourReset) * 1000;
+    const sevenDayResetMs = Number(rl.sevenDayReset) * 1000;
     try {
-      rateLimits.fiveHourTokens = Number.isFinite(fiveHourResetMs)
+      rl.fiveHourTokens = Number.isFinite(fiveHourResetMs)
         ? await getTokensInWindow(fiveHourResetMs - 5 * 3600 * 1000, nowMs)
         : null;
-      rateLimits.sevenDayTokens = Number.isFinite(sevenDayResetMs)
+      rl.sevenDayTokens = Number.isFinite(sevenDayResetMs)
         ? await getTokensInWindow(sevenDayResetMs - 7 * 24 * 3600 * 1000, nowMs)
         : null;
     } catch (err) {
       errors.push("Window tokens: " + err.message);
-      rateLimits.fiveHourTokens = null;
-      rateLimits.sevenDayTokens = null;
+      rl.fiveHourTokens = null;
+      rl.sevenDayTokens = null;
     }
   }
 
@@ -240,7 +289,7 @@ async function gatherData() {
 
   return {
     totals,
-    rateLimits,
+    rateLimits: rl,
     rateLimitError,
     isLoggedIn: !!creds,
     oauth: creds ? { subscriptionType: creds.subscriptionType, rateLimitTier: creds.rateLimitTier } : null,
@@ -296,7 +345,10 @@ function createGaugeIcon(pct) {
 
   // Fill zone: x=8..23 (16px wide), y=6..37 (32px tall)
   // Fill from bottom: height proportional to pct
-  const fillHeight = Math.round(pct * 32);
+  // Overage utilisation can exceed 1.0; clamp so the fill cannot paint over the
+  // border, and guard against NaN from a malformed header.
+  const safePct = Math.min(1, Math.max(0, Number(pct) || 0));
+  const fillHeight = Math.round(safePct * 32);
   if (fillHeight > 0) {
     fillRect(8, 38 - fillHeight, 23, 37);
   }
@@ -342,10 +394,28 @@ function createPopup() {
       popup.hide();
     }
   });
+
+  // Electron's default menu supplies a ⌘W "Close Window" role, and letting it
+  // destroy the popup left every later tray click dead. Hide instead — but only
+  // while the app is running: on quit the window must really close. Note this
+  // has to be an event handler rather than the `closable: false` constructor
+  // option, because a non-closable window makes app.quit() hang forever.
+  popup.on("close", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    popup.hide();
+  });
+
+  // Defence in depth: if the window is destroyed by any route, drop the stale
+  // reference so showPopup() can build a fresh one instead of no-op'ing forever.
+  popup.on("closed", () => {
+    popup = null;
+  });
 }
 
 function showPopup() {
-  if (!popup || popup.isDestroyed()) return;
+  if (!popup || popup.isDestroyed()) createPopup();
+  if (!popup) return;
 
   if (popup.isVisible()) {
     popup.hide();
@@ -409,7 +479,7 @@ ipcMain.on("login", async () => {
 });
 
 ipcMain.on("logout", async () => {
-  auth.clearCredentials();
+  await auth.clearCredentials();
   rateLimits = null;
   rateLimitError = "Not connected";
   cachedDashboardData = null;
@@ -426,6 +496,8 @@ ipcMain.on("quit", () => app.quit());
 function updateTrayTitle() {
   if (!tray) return;
   if (!rateLimits) {
+    // Reset the gauge too — otherwise it keeps the last fill level after logout.
+    tray.setImage(createGaugeIcon(0));
     tray.setTitle(" —");
     return;
   }
@@ -449,7 +521,12 @@ app.whenReady().then(async () => {
   // Right-click: minimal native menu fallback
   tray.on("right-click", () => {
     const menu = Menu.buildFromTemplate([
-      { label: "Refresh", click: async () => { await fetchRateLimits(); updateTrayTitle(); sendDataToPopup(); } },
+      { label: "Refresh", click: async () => {
+        await fetchRateLimits();
+        await refreshCachedData();
+        updateTrayTitle();
+        sendDataToPopup();
+      } },
       { type: "separator" },
       { label: "Quit", click: () => app.quit() },
     ]);
@@ -491,6 +568,7 @@ app.on("window-all-closed", (e) => {
 });
 
 app.on("before-quit", () => {
+  isQuitting = true;
   if (refreshInterval) clearInterval(refreshInterval);
   if (rateLimitInterval) clearInterval(rateLimitInterval);
 });

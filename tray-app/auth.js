@@ -6,10 +6,13 @@
  */
 
 const { app, safeStorage } = require("electron");
-const { execFileSync } = require("child_process");
-const fs = require("fs");
+const { execFile } = require("child_process");
+const { promisify } = require("util");
+const fsp = require("fs").promises;
 const path = require("path");
 const https = require("https");
+
+const execFileAsync = promisify(execFile);
 
 const AUTH_FILE = () => path.join(app.getPath("userData"), "auth.enc");
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -18,20 +21,24 @@ let cachedToken = null;
 
 // ─── Credential storage (safeStorage + encrypted file) ─────────────────────
 
-function saveCredentials(tokenData) {
+// NOTE: every function here runs on the Electron main process, which also drives
+// the tray and the popup. All I/O is async — the previous sync `security` lookup
+// and sync fs calls blocked the UI for up to ~10s on the refresh and login paths.
+
+async function saveCredentials(tokenData) {
   if (!safeStorage.isEncryptionAvailable()) {
     throw new Error("Encryption not available on this system");
   }
   const json = JSON.stringify(tokenData);
   const encrypted = safeStorage.encryptString(json);
-  fs.writeFileSync(AUTH_FILE(), encrypted);
+  await fsp.writeFile(AUTH_FILE(), encrypted);
   cachedToken = tokenData;
 }
 
-function loadCredentials() {
+async function loadCredentials() {
   if (cachedToken) return cachedToken;
   try {
-    const encrypted = fs.readFileSync(AUTH_FILE());
+    const encrypted = await fsp.readFile(AUTH_FILE());
     const json = safeStorage.decryptString(encrypted);
     cachedToken = JSON.parse(json);
     return cachedToken;
@@ -40,10 +47,10 @@ function loadCredentials() {
   }
 }
 
-function clearCredentials() {
+async function clearCredentials() {
   cachedToken = null;
   try {
-    fs.unlinkSync(AUTH_FILE());
+    await fsp.unlink(AUTH_FILE());
   } catch {
     // File may not exist
   }
@@ -93,28 +100,30 @@ function httpsPostJSON(url, body, headers = {}) {
 
 // ─── Import from Claude Code keychain ────────────────────────────────────────
 
-function importFromKeychain() {
+async function importFromKeychain() {
   try {
     // Try user-account entry first (active Claude Code), fall back to generic
     let raw;
     try {
-      raw = execFileSync(
+      const r = await execFileAsync(
         "security",
         ["find-generic-password", "-s", "Claude Code-credentials", "-a", process.env.USER || "", "-w"],
         { encoding: "utf8", timeout: 5000 }
-      ).trim();
+      );
+      raw = r.stdout.trim();
     } catch {
-      raw = execFileSync(
+      const r = await execFileAsync(
         "security",
         ["find-generic-password", "-s", "Claude Code-credentials", "-a", "Claude Code", "-w"],
         { encoding: "utf8", timeout: 5000 }
-      ).trim();
+      );
+      raw = r.stdout.trim();
     }
     const creds = JSON.parse(raw);
     if (!creds?.claudeAiOauth) return false;
 
     const oauth = creds.claudeAiOauth;
-    saveCredentials({
+    await saveCredentials({
       accessToken: oauth.accessToken,
       expiresAt: oauth.expiresAt || 0,
       subscriptionType: oauth.subscriptionType || null,
@@ -128,8 +137,8 @@ function importFromKeychain() {
 
 // ─── Token access ───────────────────────────────────────────────────────────
 
-function getValidAccessToken() {
-  const creds = loadCredentials();
+async function getValidAccessToken() {
+  const creds = await loadCredentials();
   if (!creds) return null;
 
   // Token still valid (5 min buffer) — use it
@@ -140,7 +149,7 @@ function getValidAccessToken() {
   // Token expired — re-import fresh from Claude Code's keychain
   console.log("[auth] Token expired, re-importing from keychain...");
   cachedToken = null; // clear in-memory cache so importFromKeychain saves fresh
-  if (importFromKeychain()) {
+  if (await importFromKeychain()) {
     console.log("[auth] Keychain re-import successful");
     return cachedToken.accessToken;
   }
@@ -152,13 +161,13 @@ function getValidAccessToken() {
 // ─── Login (imports fresh from Claude Code keychain) ─────────────────────────
 
 async function login() {
-  clearCredentials();
+  await clearCredentials();
 
-  if (!importFromKeychain()) {
+  if (!await importFromKeychain()) {
     throw new Error("Could not find Claude Code credentials in keychain — make sure Claude Code is logged in");
   }
 
-  return loadCredentials();
+  return await loadCredentials();
 }
 
 module.exports = {
