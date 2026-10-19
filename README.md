@@ -10,7 +10,7 @@ macOS menu bar app for monitoring Claude Code usage and rate-limit status.
 - Lists recent and top projects by cost
 - Reads local Claude usage history from `~/.claude/projects`
 - Imports Claude Code credentials from the macOS keychain
-- Auto-refreshes usage every 60s and rate limits every 5 minutes
+- Auto-refreshes usage every 60s and rate limits every 15 minutes
 - Shows an error indicator when something goes wrong
 
 ## Screenshot
@@ -64,6 +64,19 @@ npm run build
 ```
 
 Build output goes to `tray-app/dist/` (git-ignored).
+
+## Native macOS App (Swift)
+
+`macos-app/` is a native Swift rewrite of the tray app (AppKit status item, SwiftUI popover, no dependencies), about 2 MB instead of Electron's ~260 MB. It reads the same data and, on first launch, carries over the Electron app's usage history and connected state.
+
+Requires macOS 14+, Xcode, and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
+
+```bash
+cd macos-app
+xcodegen generate              # creates ClaudeUsageTray.xcodeproj
+open ClaudeUsageTray.xcodeproj # run from Xcode
+./build.sh                     # signed universal release in macos-app/dist/
+```
 
 ## How It Works
 

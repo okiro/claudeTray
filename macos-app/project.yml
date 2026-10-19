@@ -1,0 +1,34 @@
+name: ClaudeUsageTray
+options:
+  bundleIdPrefix: com.claude
+  deploymentTarget:
+    macOS: "14.0"
+settings:
+  base:
+    DEVELOPMENT_TEAM: W898QUYB63
+    MARKETING_VERSION: "2.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "6.0"
+targets:
+  ClaudeUsageTray:
+    type: application
+    platform: macOS
+    sources:
+      - path: ClaudeUsageTray
+    settings:
+      base:
+        PRODUCT_NAME: Claude Usage Tray
+        PRODUCT_BUNDLE_IDENTIFIER: com.claude.usage-tray
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_CFBundleDisplayName: Claude Usage Tray
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        INFOPLIST_KEY_LSUIElement: "YES"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: "YES"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: Apple Development
+      configs:
+        Release:
+          CODE_SIGN_IDENTITY: Developer ID Application
+          OTHER_CODE_SIGN_FLAGS: --timestamp
+    scheme: {}

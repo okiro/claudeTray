@@ -46,3 +46,27 @@ Electron tray-only app (no dock icon). Three processes:
 - HTML strings built via concatenation in popup.js (no template engine)
 - All CSS is inline in popup.html `<style>` block
 - No external dependencies beyond Electron
+
+## Native Swift App (`macos-app/`)
+
+Native replacement for the Electron app, kept alongside it until parity is confirmed.
+AppKit `NSStatusItem` + `NSPopover` hosting SwiftUI; Swift 6 language mode; macOS 14+; no dependencies.
+
+cd macos-app
+xcodegen generate  # regenerate the Xcode project (after adding/removing files or editing project.yml)
+open ClaudeUsageTray.xcodeproj
+./build.sh         # Developer ID-signed universal release in macos-app/dist/
+
+- `AppModel.swift` — `@Observable` state, refresh timers (60s usage, 15m rate limits), coalesced fetches, disk cache
+- `UsageStore.swift` — actor; port of `claude-usage-parser.js`, with parsed entries cached per file by mtime+size
+- `CredentialStore.swift` — keychain import; `RateLimitClient.swift` — rate-limit header probe
+- `StatusItemController.swift` — menu bar item, popover show/dismiss, right-click menu
+- `PopoverView.swift` — the popover UI
+
+Gotchas:
+- `ClaudeUsageTray.xcodeproj` is generated and git-ignored — edit `project.yml`, not the project
+- `Pricing.swift` mirrors `MODEL_PRICING`; update both while both apps exist
+- `usage-history.json` keeps the Electron format and `HISTORY_VERSION` 2; it lives in `~/Library/Application Support/Claude Usage Tray/` and is seeded from the Electron app's `claude-usage-tray/` directory on first launch
+- The OAuth token is never written to disk; only a `connected` flag in UserDefaults persists
+- Read Claude Code's keychain item through `/usr/bin/security`, not `SecItem` — the item trusts that tool, so there is no access prompt
+- Same bundle ID as the Electron app (`com.claude.usage-tray`): `open` may activate whichever is running, so quit one before launching the other

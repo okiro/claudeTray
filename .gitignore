@@ -10,3 +10,7 @@ coverage/
 
 tray-app/node_modules/
 tray-app/dist/
+
+# Swift app: the Xcode project is generated from macos-app/project.yml
+macos-app/*.xcodeproj/
+macos-app/build/
