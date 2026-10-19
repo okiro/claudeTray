@@ -544,7 +544,8 @@ private struct Project {
     }
 }
 
-/// On-disk history, kept format-compatible with the Electron build's usage-history.json.
+/// On-disk history. Same layout as the former Electron app's usage-history.json,
+/// which is where v2 files come from.
 private struct History: Codable {
     var version = UsageStore.historyVersion
     var lastUpdated: String?

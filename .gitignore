@@ -1,16 +1,9 @@
 .DS_Store
 .claude/
 *.log
-*.tgz
-npm-debug.log*
 
-node_modules/
 dist/
-coverage/
 
-tray-app/node_modules/
-tray-app/dist/
-
-# Swift app: the Xcode project is generated from macos-app/project.yml
+# The Xcode project is generated from macos-app/project.yml
 macos-app/*.xcodeproj/
 macos-app/build/
