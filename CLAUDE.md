@@ -66,7 +66,7 @@ open ClaudeUsageTray.xcodeproj
 Gotchas:
 - `ClaudeUsageTray.xcodeproj` is generated and git-ignored — edit `project.yml`, not the project
 - `Pricing.swift` mirrors `MODEL_PRICING`; update both while both apps exist
-- `usage-history.json` keeps the Electron format and `HISTORY_VERSION` 2; it lives in `~/Library/Application Support/Claude Usage Tray/` and is seeded from the Electron app's `claude-usage-tray/` directory on first launch
+- `usage-history.json` keeps the Electron layout at `HISTORY_VERSION` 3; a v2 file is re-priced on load, not discarded, since it holds usage whose transcripts are gone. It lives in `~/Library/Application Support/Claude Usage Tray/` and is seeded from the Electron app's `claude-usage-tray/` directory on first launch
 - The OAuth token is never written to disk; only a `connected` flag in UserDefaults persists
 - Read Claude Code's keychain item through `/usr/bin/security`, not `SecItem` — the item trusts that tool, so there is no access prompt
 - Same bundle ID as the Electron app (`com.claude.usage-tray`): `open` may activate whichever is running, so quit one before launching the other

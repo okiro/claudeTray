@@ -11,7 +11,10 @@ actor UsageStore {
     /// high-water marks instead of preserving bad values forever.
     /// v2: dedupe streamed assistant entries, fix cache-token double-subtraction,
     ///     correct/extend model pricing, local-time day keys.
-    static let historyVersion = 2
+    /// v3: price Opus 5.5, Fable 5.1, Haiku 5.5 and the other 5.x models v2 billed at
+    ///     the fallback rate. A v2 file is corrected instead of discarded, because it
+    ///     also holds usage whose transcripts are gone (see HistoryV2Correction).
+    static let historyVersion = 3
 
     struct Result: Sendable {
         var summary: UsageSummary
@@ -45,6 +48,9 @@ actor UsageStore {
         guard let topLevel = try? fm.contentsOfDirectory(atPath: projectsDir.path(percentEncoded: false)) else {
             return Result(summary: UsageSummary(), fiveHourTokens: fiveHourWindow?.tokens, sevenDayTokens: sevenDayWindow?.tokens)
         }
+
+        var history = loadHistory()
+        var historyV2Correction = history.version == 2 ? HistoryV2Correction() : nil
 
         var projects: [String: Project] = [:]
         var order: [String] = []
@@ -107,6 +113,13 @@ actor UsageStore {
 
                     project.modelBreakdown[entry.model, default: 0] += entry.cost
                     globalModelBreakdown[entry.model, default: 0] += entry.cost
+
+                    if entry.historyV2Cost != entry.cost {
+                        historyV2Correction?.add(
+                            entry.historyV2Cost - entry.cost, project: dir, model: entry.model,
+                            day: entry.timestamp.map { days.key(for: $0) }
+                        )
+                    }
                 }
             }
 
@@ -122,7 +135,7 @@ actor UsageStore {
         parsedFiles = parsedFiles.filter { livePaths.contains($0.key) }
 
         // ─── Merge with persisted history ───────────────────────────────────────
-        let history = loadHistory()
+        historyV2Correction?.apply(to: &history)
         Self.mergeMax(&dailyUsage, history.dailyUsage)
         Self.mergeMax(&globalModelBreakdown, history.globalModelBreakdown)
 
@@ -304,7 +317,7 @@ actor UsageStore {
     private func loadHistory() -> History {
         guard let data = try? Data(contentsOf: historyURL),
               let history = try? JSONDecoder().decode(History.self, from: data),
-              history.version == Self.historyVersion
+              history.version == Self.historyVersion || history.version == 2
         else { return History() }
         return history
     }
@@ -350,6 +363,8 @@ private struct Entry {
     let timestamp: Date?
     let model: String
     let cost: Double
+    /// What history v2 recorded for this entry; differs for models it did not price.
+    let historyV2Cost: Double
     let input: Int
     let output: Int
     let cacheRead: Int
@@ -382,8 +397,10 @@ private struct Entry {
         model = Self.string(message?["model"]) ?? Self.string(object["model"]) ?? "unknown"
         if let reported = (object["costUSD"] as? NSNumber)?.doubleValue, reported != 0 {
             cost = reported
+            historyV2Cost = reported
         } else {
             cost = Pricing.cost(model: model, input: input, output: output, cacheRead: cacheRead, cacheWrite: cacheWrite)
+            historyV2Cost = Pricing.historyV2Cost(model: model, input: input, output: output, cacheRead: cacheRead, cacheWrite: cacheWrite)
         }
         sessionId = Self.string(object["sessionId"])
         timestamp = Self.string(object["timestamp"]).flatMap(UsageStore.parseDate)
@@ -422,6 +439,45 @@ private struct WindowAccumulator {
         tokens.output += entry.output
         tokens.cacheRead += entry.cacheRead
         tokens.cacheWrite += entry.cacheWrite
+    }
+}
+
+/// Re-prices a v2 history. Its high-water marks hold fallback-rate costs for models
+/// v2 could not price, and the max-merge would keep any of those that exceed the
+/// correct value forever. For each such entry still on disk, the difference is taken
+/// out of every total it was recorded in; the correct cost then comes back through
+/// the merge. Entries whose transcripts are gone keep their fallback-rate cost.
+private struct HistoryV2Correction {
+    private var daily: [String: Double] = [:]
+    private var models: [String: Double] = [:]
+    private var projectDaily: [String: [String: Double]] = [:]
+    private var projectModels: [String: [String: Double]] = [:]
+
+    /// `delta` is the v2 cost minus the correct cost; nil `day` means no timestamp.
+    mutating func add(_ delta: Double, project: String, model: String, day: String?) {
+        if let day { daily[day, default: 0] += delta }
+        models[model, default: 0] += delta
+        projectDaily[project, default: [:]][day ?? "unknown", default: 0] += delta
+        projectModels[project, default: [:]][model, default: 0] += delta
+    }
+
+    func apply(to history: inout History) {
+        Self.subtract(daily, from: &history.dailyUsage)
+        Self.subtract(models, from: &history.globalModelBreakdown)
+        for (dir, deltas) in projectDaily where history.projects[dir] != nil {
+            Self.subtract(deltas, from: &history.projects[dir]!.dailyCost)
+        }
+        for (dir, deltas) in projectModels where history.projects[dir] != nil {
+            Self.subtract(deltas, from: &history.projects[dir]!.modelBreakdown)
+        }
+    }
+
+    private static func subtract(_ deltas: [String: Double], from totals: inout [String: Double]) {
+        for (key, delta) in deltas {
+            if let total = totals[key] {
+                totals[key] = max(0, total - delta)
+            }
+        }
     }
 }
 
